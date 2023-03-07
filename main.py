@@ -1,3 +1,4 @@
+import time
 import cv2
 import csv
 import sys
@@ -14,6 +15,8 @@ import ricciData
 from GraphRicciCurvature.OllivierRicci import OllivierRicci
 import numpy as np
 from os import listdir
+
+start_time = time.time()
 count=1
 csv_file=open('Workout.csv', mode='w')
 nomicolonne = ['Indice','Nome immagine', 'Etichetta', 'Manhattan','Curvature']
@@ -39,6 +42,7 @@ for images in os.listdir(folder_dir):
         count+=1
 print("Immagini ",count-1)
 csv_file.close
+print("--- %s seconds ---" % (time.time() - start_time))
 #image = cv2.imread("/home/sasa/Scrivania/Test")
 #mediapipeMesh.showGraph(image, "euclidean")
 #dlibMesh.showGraph(image, "euclidean")
