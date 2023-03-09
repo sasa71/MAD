@@ -1,4 +1,6 @@
-
+from memory_profiler import profile
+import gc
+import os
 import cv2
 import mediapipe
 import networkx
@@ -26,11 +28,11 @@ def showGraph(image,a):
     cv2.waitKey(0)
     
     
-    
 def buildGraph(image, distType):
     height, width, _ = image.shape
     faceModule = mediapipe.solutions.face_mesh
-    processedImage = faceModule.FaceMesh(static_image_mode=True).process(image)
+    Image = faceModule.FaceMesh(static_image_mode=True)
+    processedImage = Image.process(image)
     if(processedImage.multi_face_landmarks is None):
         return
 
@@ -52,14 +54,6 @@ def buildGraph(image, distType):
         match distType:
             case 'manhattan':
                 weight = distance.cityblock(nodesPosition[faceEdge[0]], nodesPosition[faceEdge[1]])
-            case 'euclidean':
-                weight = distance.euclidean(nodesPosition[faceEdge[0]], nodesPosition[faceEdge[1]])
-            case 'cosine':
-                weight = distance.cosine(nodesPosition[faceEdge[0]], nodesPosition[faceEdge[1]])
-            case 'chebyshev':
-                weight = distance.chebyshev(nodesPosition[faceEdge[0]], nodesPosition[faceEdge[1]])
-            case _:
-                    weight = distance.euclidean(nodesPosition[faceEdge[0]], nodesPosition[faceEdge[1]])
 
         #If the weight is equal to 0 adds a near null value
         if(weight != 0):
@@ -67,6 +61,9 @@ def buildGraph(image, distType):
         else:
             graph.add_edge(faceEdge[0],faceEdge[1], weight = 0.001) 
 
+    Image.close()
+    del processedImage
+    gc.collect()
     return graph
 
 
@@ -121,7 +118,7 @@ def buildOllivierRicciGraph(image, distType):
     if (image is None):
         return
 
-    graph = buildFCGraph(image, distType)
+    graph = buildGraph(image, distType)
 
     if (graph is None):
         return
@@ -135,7 +132,7 @@ def buildFormanRicciGraph(image, distType):
     if(image is None):
         return
 
-    graph = buildFCGraph(image, distType)
+    graph = buildGraph(image, distType)
 
     if(graph is None):
         return
@@ -244,7 +241,7 @@ FACE_LANDMARKS = frozenset([
     
 ])
 
-FACE_EDGES = frozenset([
+"""FACE_EDGES = frozenset([
                         #Lips
                            (61, 146), (146, 91), (91, 181), (181, 84), (84, 17),
                            (17, 314), (314, 405), (405, 321), (321, 375),
@@ -344,7 +341,7 @@ FACEMESH_FACE_OVAL = frozenset([(10, 338), (338, 297), (297, 332), (332, 284),
 FACEMESH_CONTOURS = frozenset().union(*[
     FACEMESH_LIPS, FACEMESH_LEFT_EYE, FACEMESH_LEFT_EYEBROW, FACEMESH_RIGHT_EYE,
     FACEMESH_RIGHT_EYEBROW, FACEMESH_FACE_OVAL
-])
+])"""
 
 FACEMESH_TESSELATION = frozenset([
     (127, 34),  (34, 139),  (139, 127), (11, 0),    (0, 37),    (37, 11),
