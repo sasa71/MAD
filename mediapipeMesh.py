@@ -1,4 +1,3 @@
-from memory_profiler import profile
 import gc
 import os
 import cv2
@@ -8,9 +7,30 @@ from GraphRicciCurvature.FormanRicci import FormanRicci
 from GraphRicciCurvature.OllivierRicci import OllivierRicci
 from scipy.spatial import distance
 
-def showGraph(image,a):
+def showGraphNormThreshold(image,a):
 
-    graph = buildGraph(image, a)
+    graph = buildGraphNormThreshold(image, a)
+
+    if(graph is None):
+        return
+    
+    nodesPositions = networkx.get_node_attributes(graph,"pos")
+
+    
+    for faceEdge in graph.edges():
+        cv2.line(image, nodesPositions[faceEdge[0]], nodesPositions[faceEdge[1]], (0,0,255), 1)
+
+
+    for faceLandmark in LANDMARK_THRESHOLD:
+        cv2.circle(image, nodesPositions[faceLandmark], 2, (0,0,0))
+        cv2.putText(image, str(faceLandmark), nodesPositions[faceLandmark], 0, 0.2, (255,0,0))
+
+    cv2.imshow("image",image)
+    cv2.waitKey(0)
+
+def showGraphNorm(image,a):
+
+    graph = buildGraphNorm(image, a)
 
     if(graph is None):
         return
@@ -18,11 +38,35 @@ def showGraph(image,a):
     nodesPositions = networkx.get_node_attributes(graph,"pos")
 
     for faceEdge in FACEMESH_TESSELATION:
-        cv2.line(image, nodesPositions[faceEdge[0]], nodesPositions[faceEdge[1]], (0,0,255), 1)
+        cv2.line(image, nodesPositions[faceEdge[0]], nodesPositions[faceEdge[1]], (0,255,0), 1)
+    
 
     for faceLandmark in FACE_LANDMARKS:
         cv2.circle(image, nodesPositions[faceLandmark], 2, (0,0,0))
-        #cv2.putText(image, str(faceLandmark), nodesPositions[faceLandmark], 0, 0.2, (255,0,0))
+        cv2.putText(image, str(faceLandmark), nodesPositions[faceLandmark], 0, 0.2, (255,0,0))
+
+    cv2.imshow("image",image)
+    cv2.waitKey(0)
+    
+
+
+def showGraph(image,a):
+
+    graph = buildGraphNorm(image, a)
+
+    if(graph is None):
+        return
+    
+    nodesPositions = networkx.get_node_attributes(graph,"pos")
+
+    
+    for faceEdge in graph.edges():
+        cv2.line(image, nodesPositions[faceEdge[0]], nodesPositions[faceEdge[1]], (0,0,255), 1)
+
+
+    for faceLandmark in FACE_LANDMARKS:
+        cv2.circle(image, nodesPositions[faceLandmark], 2, (0,0,0))
+        cv2.putText(image, str(faceLandmark), nodesPositions[faceLandmark], 0, 0.2, (255,0,0))
 
     cv2.imshow("image",image)
     cv2.waitKey(0)
@@ -40,7 +84,6 @@ def buildGraph(image, distType):
 
     #Adds node to the graph
     for faceLandmark in FACE_LANDMARKS:
-        #print("have this landmark!!! HYA!!" + landmark)
         landmark =  processedImage.multi_face_landmarks[0].landmark[faceLandmark]
         pos = (int(landmark.x * width), int(landmark.y * height))
         graph.add_node(faceLandmark, pos=pos)
@@ -66,158 +109,88 @@ def buildGraph(image, distType):
     gc.collect()
     return graph
 
-
-
-
-# Builds complete graph
-def buildFCGraph(image, distType):
+def buildGraphNorm(image, distType):
+    
     height, width, _ = image.shape
     faceModule = mediapipe.solutions.face_mesh
-    processedImage = faceModule.FaceMesh(static_image_mode=True).process(image)
-    if (processedImage.multi_face_landmarks is None):
+    Image = faceModule.FaceMesh(static_image_mode=True)
+    processedImage = Image.process(image)
+    if(processedImage.multi_face_landmarks is None):
         return
+
     graph = networkx.Graph()
 
-    # Adds node to the graph
-    for faceLandmark in FC_FACE_LANDMARKS:
-        landmark = processedImage.multi_face_landmarks[0].landmark[faceLandmark]
+    lista_norm = []
+    #Adds node to the graph
+    for faceLandmark in FACE_LANDMARKS:
+        landmark =  processedImage.multi_face_landmarks[0].landmark[faceLandmark]
+        lista_norm.append(landmark)
         pos = (int(landmark.x * width), int(landmark.y * height))
         graph.add_node(faceLandmark, pos=pos)
+        
+    nodesPosition = networkx.get_node_attributes(graph,"pos")
+    #Adds edges to the graph
+    for faceEdge in FACEMESH_TESSELATION:
 
-    nodesPosition = networkx.get_node_attributes(graph, "pos")
+        #Calculates the distance
+        match distType:
+            case 'manhattan':
+                weight = distance.cityblock([lista_norm[faceEdge[0]].x, lista_norm[faceEdge[0]].y, lista_norm[faceEdge[0]].z], 
+                                            [lista_norm[faceEdge[1]].x, lista_norm[faceEdge[1]].y, lista_norm[faceEdge[1]].z])
 
-    flm = []
-    # Conversion to list, to get both node out of the couple
-    for fl in FC_FACE_LANDMARKS:
-        flm.append(fl)
+        #If the weight is equal to 0 adds a near null value
+        if(weight != 0):
+            graph.add_edge(faceEdge[0],faceEdge[1], weight = weight)
+        else:
+            graph.add_edge(faceEdge[0],faceEdge[1], weight = 0.001)
+            
 
-    # Distance calculation
-    for i in range(0, len(FC_FACE_LANDMARKS)):
-        for j in range(i + 1, len(FC_FACE_LANDMARKS)):
-            match distType:
-                case 'manhattan':
-                    weight = distance.cityblock(nodesPosition[flm[i]], nodesPosition[flm[j]])
-                case 'euclidean':
-                    weight = distance.euclidean(nodesPosition[flm[i]], nodesPosition[flm[j]])
-                case 'cosine':
-                    weight = distance.cosine(nodesPosition[flm[i]], nodesPosition[flm[j]])
-                case 'chebyshev':
-                    weight = distance.chebyshev(nodesPosition[flm[i]], nodesPosition[flm[j]])
-                case _:
-                    weight = distance.euclidean(nodesPosition[flm[i]], nodesPosition[flm[j]])
-
-            if (weight != 0):
-                graph.add_edge(flm[i], flm[j], weight=weight)
-            else:
-                graph.add_edge(flm[i], flm[j], weight=0.001)
-
+    Image.close()
+    del processedImage
+    gc.collect()
     return graph
 
 
-def buildOllivierRicciGraph(image, distType):
-    if (image is None):
+def buildGraphNormThreshold(image, distType):
+    
+    height, width, _ = image.shape
+    faceModule = mediapipe.solutions.face_mesh
+    Image = faceModule.FaceMesh(static_image_mode=True)
+    processedImage = Image.process(image)
+    if(processedImage.multi_face_landmarks is None):
         return
 
-    graph = buildGraph(image, distType)
+    graph = networkx.Graph()
 
-    if (graph is None):
-        return
-    # Computes Ollivier-Ricci curv
-    ricciCurvGraph = OllivierRicci(graph)
-    ricciCurvGraph.compute_ricci_curvature()
-    return ricciCurvGraph
+    lista_norm = []
+    #Adds node to the graph
+    for faceLandmark in FACE_LANDMARKS:
+        landmark =  processedImage.multi_face_landmarks[0].landmark[faceLandmark]
+        lista_norm.append(landmark)
+        pos = (int(landmark.x * width), int(landmark.y * height))
+        graph.add_node(faceLandmark, pos=pos)
+        
+    nodesPosition = networkx.get_node_attributes(graph,"pos")
+    #Adds edges to the graph
+    for faceEdge in ARCHI_THRESHOLD:
 
-def buildFormanRicciGraph(image, distType):
+        #Calculates the distance
+        match distType:
+            case 'manhattan':
+                weight = distance.cityblock([lista_norm[faceEdge[0]].x, lista_norm[faceEdge[0]].y, lista_norm[faceEdge[0]].z], 
+                                            [lista_norm[faceEdge[1]].x, lista_norm[faceEdge[1]].y, lista_norm[faceEdge[1]].z])
 
-    if(image is None):
-        return
+        #If the weight is equal to 0 adds a near null value
+        if(weight != 0):
+            graph.add_edge(faceEdge[0],faceEdge[1], weight = weight)
+        else:
+            graph.add_edge(faceEdge[0],faceEdge[1], weight = 0.001)
+            
 
-    graph = buildGraph(image, distType)
-
-    if(graph is None):
-        return
-    #Computes Forman-Ricci curv
-    ricciCurvGraph = FormanRicci(graph)
-    ricciCurvGraph.compute_ricci_curvature()
-    return ricciCurvGraph
-
-
-# Shows image with graph drawn on it
-def showFCGraph(image,a):
-    graph = buildFCGraph(image, a)
-
-    if (graph is None):
-        return
-
-    nodesPositions = networkx.get_node_attributes(graph, "pos")
-
-    for faceEdge in graph.edges:
-        cv2.line(image, nodesPositions[faceEdge[0]], nodesPositions[faceEdge[1]], (0, 0, 255), 1)
-
-    for faceLandmark in FC_FACE_LANDMARKS:
-        cv2.circle(image, nodesPositions[faceLandmark], 2, (0, 0, 0))
-        #cv2.putText(image, str(faceLandmark), nodesPositions[faceLandmark], 0, 0.2, (255, 0, 0))
-
-    cv2.imshow("xxxxxxxxx", image)
-    cv2.waitKey(0)
-
-def showGraphFRicci(image,a):
-    graph = buildFormanRicciGraph(image, a)
-
-    if (graph is None):
-        return
-
-    nodesPositions = networkx.get_node_attributes(graph, "pos")
-
-    for faceEdge in graph.edges:
-        cv2.line(image, nodesPositions[faceEdge[0]], nodesPositions[faceEdge[1]], (0, 0, 255), 1)
-
-    for faceLandmark in FC_FACE_LANDMARKS:
-        cv2.circle(image, nodesPositions[faceLandmark], 2, (0, 0, 0))
-        cv2.putText(image, str(faceLandmark), nodesPositions[faceLandmark], 0, 0.2, (255, 0, 0))
-
-    cv2.imshow("xxxxxxxxx", image)
-    cv2.waitKey(0)
-
-def showGraphORicci(image,a):
-    graph = buildOllivierRicciGraph(image, a)
-
-    if (graph is None):
-        return
-
-    nodesPositions = networkx.get_node_attributes(graph, "pos")
-
-    for faceEdge in graph.edges:
-        cv2.line(image, nodesPositions[faceEdge[0]], nodesPositions[faceEdge[1]], (0, 0, 255), 1)
-
-    for faceLandmark in FC_FACE_LANDMARKS:
-        cv2.circle(image, nodesPositions[faceLandmark], 2, (0, 0, 0))
-        cv2.putText(image, str(faceLandmark), nodesPositions[faceLandmark], 0, 0.2, (255, 0, 0))
-
-    cv2.imshow("xxxxxxxxx", image)
-    cv2.waitKey(0)
-
-FC_FACE_LANDMARKS = frozenset([
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 
-  40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 
-  78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 
-  113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 
-  144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 
-  175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 
-  206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 
-  237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268,
-269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288,
-289, 290, 291, 292, 293, 294, 295, 296, 297, 298, 299, 300, 301, 302, 303, 304, 305, 306, 307, 308,
-309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328,
-329, 330, 331, 332, 333, 334, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 345, 346, 347, 348,
-349, 350, 351, 352, 353, 354, 355, 356, 357, 358, 359, 360, 361, 362, 363, 364, 365, 366, 367, 368,
-369, 370, 371, 372, 373, 374, 375, 376, 377, 378, 379, 380, 381, 382, 383, 384, 385, 386, 387, 388,
-389, 390, 391, 392, 393, 394, 395, 396, 397, 398, 399, 400, 401, 402, 403, 404, 405, 406, 407, 408,
-409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 419, 420, 421, 422, 423, 424, 425, 426, 427, 428,
-429, 430, 431, 432, 433, 434, 435, 436, 437, 438, 439, 440, 441, 442, 443, 444, 445, 446, 447, 448,
-449, 450, 451, 452, 453, 454, 455, 456, 457, 458, 459, 460, 461, 462, 463, 464, 465, 466, 467
-
-])
+    Image.close()
+    del processedImage
+    gc.collect()
+    return graph
 
 FACE_LANDMARKS = frozenset([
   0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 
@@ -238,110 +211,7 @@ FACE_LANDMARKS = frozenset([
 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 419, 420, 421, 422, 423, 424, 425, 426, 427, 428,
 429, 430, 431, 432, 433, 434, 435, 436, 437, 438, 439, 440, 441, 442, 443, 444, 445, 446, 447, 448,
 449, 450, 451, 452, 453, 454, 455, 456, 457, 458, 459, 460, 461, 462, 463, 464, 465, 466, 467
-    
 ])
-
-"""FACE_EDGES = frozenset([
-                        #Lips
-                           (61, 146), (146, 91), (91, 181), (181, 84), (84, 17),
-                           (17, 314), (314, 405), (405, 321), (321, 375),
-                           (375, 291), (61, 185), (185, 40), (40, 39), (39, 37),
-                           (37, 0), (0, 267),
-                           (267, 269), (269, 270), (270, 409), (409, 291),
-                           (78, 95), (95, 88), (88, 178), (178, 87), (87, 14),
-                           (14, 317), (317, 402), (402, 318), (318, 324),
-                           (324, 308), (78, 191), (191, 80), (80, 81), (81, 82),
-                           (82, 13), (13, 312), (312, 311), (311, 310),
-                           (310, 415), (415, 308),
-
-#FACEMESH_LEFT_EYE 
-                               (263, 249), (249, 390), (390, 373), (373, 374),
-                               (374, 380), (380, 381), (381, 382), (382, 362),
-                               (263, 466), (466, 388), (388, 387), (387, 386),
-                               (386, 385), (385, 384), (384, 398), (398, 362),
-
-#FACEMESH_LEFT_IRIS
-                                 #(474, 475), (475, 476), (476, 477), (477, 474),
-
-#FACEMESH_LEFT_EYEBROW 
-                                   (276, 283), (283, 282), (282, 295),
-                                   (295, 285), (300, 293), (293, 334),
-                                   (334, 296), (296, 336),
-
-#FACEMESH_RIGHT_EYE
-(33, 7), (7, 163), (163, 144), (144, 145),
-                                (145, 153), (153, 154), (154, 155), (155, 133),
-                                (33, 246), (246, 161), (161, 160), (160, 159),
-                                (159, 158), (158, 157), (157, 173), (173, 133),
-
-#FACEMESH_RIGHT_EYEBROW 
-(46, 53), (53, 52), (52, 65), (65, 55),
-                                    (70, 63), (63, 105), (105, 66), (66, 107),
-
-#FACEMESH_RIGHT_IRIS 
-#(469, 470), (470, 471), (471, 472), (472, 469),
-
-#FACEMESH_FACE_OVAL 
-(10, 338), (338, 297), (297, 332), (332, 284),
-                                (284, 251), (251, 389), (389, 356), (356, 454),
-                                (454, 323), (323, 361), (361, 288), (288, 397),
-                                (397, 365), (365, 379), (379, 378), (378, 400),
-                                (400, 377), (377, 152), (152, 148), (148, 176),
-                                (176, 149), (149, 150), (150, 136), (136, 172),
-                                (172, 58), (58, 132), (132, 93), (93, 234),
-                                (234, 127), (127, 162), (162, 21), (21, 54),
-                                (54, 103), (103, 67), (67, 109), (109, 10)
-])
-
-FACEMESH_LIPS = frozenset([(61, 146), (146, 91), (91, 181), (181, 84), (84, 17),
-                           (17, 314), (314, 405), (405, 321), (321, 375),
-                           (375, 291), (61, 185), (185, 40), (40, 39), (39, 37),
-                           (37, 0), (0, 267),
-                           (267, 269), (269, 270), (270, 409), (409, 291),
-                           (78, 95), (95, 88), (88, 178), (178, 87), (87, 14),
-                           (14, 317), (317, 402), (402, 318), (318, 324),
-                           (324, 308), (78, 191), (191, 80), (80, 81), (81, 82),
-                           (82, 13), (13, 312), (312, 311), (311, 310),
-                           (310, 415), (415, 308)])
-
-FACEMESH_LEFT_EYE = frozenset([(263, 249), (249, 390), (390, 373), (373, 374),
-                               (374, 380), (380, 381), (381, 382), (382, 362),
-                               (263, 466), (466, 388), (388, 387), (387, 386),
-                               (386, 385), (385, 384), (384, 398), (398, 362)])
-
-FACEMESH_LEFT_IRIS = frozenset([(474, 475), (475, 476), (476, 477),
-                                 (477, 474)])
-
-FACEMESH_LEFT_EYEBROW = frozenset([(276, 283), (283, 282), (282, 295),
-                                   (295, 285), (300, 293), (293, 334),
-                                   (334, 296), (296, 336)])
-
-FACEMESH_RIGHT_EYE = frozenset([(33, 7), (7, 163), (163, 144), (144, 145),
-                                (145, 153), (153, 154), (154, 155), (155, 133),
-                                (33, 246), (246, 161), (161, 160), (160, 159),
-                                (159, 158), (158, 157), (157, 173), (173, 133)])
-
-FACEMESH_RIGHT_EYEBROW = frozenset([(46, 53), (53, 52), (52, 65), (65, 55),
-                                    (70, 63), (63, 105), (105, 66), (66, 107)])
-
-FACEMESH_RIGHT_IRIS = frozenset([(469, 470), (470, 471), (471, 472),
-                                 (472, 469)])
-
-FACEMESH_FACE_OVAL = frozenset([(10, 338), (338, 297), (297, 332), (332, 284),
-                                (284, 251), (251, 389), (389, 356), (356, 454),
-                                (454, 323), (323, 361), (361, 288), (288, 397),
-                                (397, 365), (365, 379), (379, 378), (378, 400),
-                                (400, 377), (377, 152), (152, 148), (148, 176),
-                                (176, 149), (149, 150), (150, 136), (136, 172),
-                                (172, 58), (58, 132), (132, 93), (93, 234),
-                                (234, 127), (127, 162), (162, 21), (21, 54),
-                                (54, 103), (103, 67), (67, 109), (109, 10)])
-
-
-FACEMESH_CONTOURS = frozenset().union(*[
-    FACEMESH_LIPS, FACEMESH_LEFT_EYE, FACEMESH_LEFT_EYEBROW, FACEMESH_RIGHT_EYE,
-    FACEMESH_RIGHT_EYEBROW, FACEMESH_FACE_OVAL
-])"""
 
 FACEMESH_TESSELATION = frozenset([
     (127, 34),  (34, 139),  (139, 127), (11, 0),    (0, 37),    (37, 11),
@@ -770,3 +640,15 @@ FACEMESH_TESSELATION = frozenset([
     (420, 437), (437, 456), (456, 420), (360, 420), (420, 363), (363, 360),
     (361, 401), (401, 288), (288, 361), (265, 372), (372, 353), (353, 265),
     (390, 339), (339, 249), (249, 390), (339, 448), (448, 255), (255, 339)])
+
+ARCHI_THRESHOLD = ((20,242), (59, 166), (61, 76), (62, 78), (133, 155),(289, 392), (291, 306), (292, 308), (362, 382), (392, 439))
+LANDMARK_THRESHOLD = (20, 59, 61, 62, 76, 78, 133, 155, 289, 291, 292, 306, 308, 362, 382, 392, 439)
+
+"""occhi(133 155)(362 382)
+    naso=(20 242)(59 166)(289 392)(392 439)
+    bocca=(61 76)(62 78) (291 306)(292 308)
+
+   Occhi = " C(133 155)"," C(362 382)"
+   Naso = " C(20 242)"," C(59 166)"," C(289 392)"," C(392 439)"
+   Bocca = " C(61 76)"," C(62 78)"," C(291 306)"," C(292 308)"
+"""
